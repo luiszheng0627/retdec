@@ -1165,7 +1165,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateAdd(cs_insn* i, cs_arm64* ai,
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
-	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC);
+	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
 	// For some reason it is possible to add two FP registers with integer add?
 	// This looks to be also true for sub
@@ -1199,7 +1199,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSub(cs_insn* i, cs_arm64* ai,
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
-	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC);
+	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
 	// For some reason it is possible to sub two FP registers with integer sub?
 	// This looks to be also true for add
@@ -1664,12 +1664,12 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	case ARM64_INS_LDAXP:
 		data_size = llvm::ConstantInt::get(getDefaultType(), getRegisterByteSize(ai->operands[0].reg));
 		ty = getRegisterType(ai->operands[0].reg);
-		ct = eOpConv::ZEXT_TRUNC;
+		ct = eOpConv::ZEXT_TRUNC_OR_BITCAST;
 		break;
 	case ARM64_INS_LDPSW:
 		data_size = llvm::ConstantInt::get(getDefaultType(), 4);
 		ty = irb.getInt32Ty();
-		ct = eOpConv::SEXT_TRUNC;
+		ct = eOpConv::SEXT_TRUNC_OR_BITCAST;
 		break;
 	default:
 		throw GenericError("Arm64 Ldp: Instruction id error");
@@ -1833,7 +1833,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateBr(cs_insn* i, cs_arm64* ai, 
 		storeRegister(ARM64_REG_LR, getNextInsnAddress(i), irb);
 	}
 
-	op0 = loadOpUnary(ai, irb);
+	op0 = loadOpsUnary(ai, irb);
 	generateBranchFunctionCall(irb, op0);
 }
 
@@ -1844,7 +1844,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateB(cs_insn* i, cs_arm64* ai, l
 {
 	EXPECT_IS_UNARY(i, ai, irb);
 
-	op0 = loadOpUnary(ai, irb);
+	op0 = loadOpsUnary(ai, irb);
 
 	if (isCondIns(ai)) {
 		auto* cond = generateInsnConditionCode(irb, ai);
@@ -1864,7 +1864,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateBl(cs_insn* i, cs_arm64* ai, 
 	EXPECT_IS_UNARY(i, ai, irb);
 
 	storeRegister(ARM64_REG_LR, getNextInsnAddress(i), irb);
-	op0 = loadOpUnary(ai, irb);
+	op0 = loadOpsUnary(ai, irb);
 	generateCallFunctionCall(irb, op0);
 }
 
@@ -2640,7 +2640,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCmp(cs_insn* i, cs_arm64* ai
 	op0 = loadOp(ai->operands[0], irb);
 	op1 = loadOp(ai->operands[1], irb);
 
-	op1 = generateTypeConversion(irb, op1, op0->getType(), eOpConv::FP_CAST);
+	op1 = generateTypeConversion(irb, op1, op0->getType(), eOpConv::FPCAST_OR_BITCAST);
 
 	// IF op1 == op2
 	auto* fcmpOeq = irb.CreateFCmpOEQ(op0, op1);
@@ -2703,7 +2703,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvt(cs_insn* i, cs_arm64* ai
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOp(ai->operands[1], irb);
-	storeOp(ai->operands[0], op1, irb);
+	storeOp(ai->operands[0], op1, irb, eOpConv::FPCAST_OR_BITCAST);
 }
 
 /**
@@ -2718,10 +2718,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtf(cs_insn* i, cs_arm64* a
 	switch(i->id)
 	{
 	case ARM64_INS_UCVTF:
-		storeOp(ai->operands[0], op1, irb, eOpConv::UITOFP);
+		storeOp(ai->operands[0], op1, irb, eOpConv::UITOFP_OR_FPCAST);
 		break;
 	case ARM64_INS_SCVTF:
-		storeOp(ai->operands[0], op1, irb, eOpConv::SITOFP);
+		storeOp(ai->operands[0], op1, irb, eOpConv::SITOFP_OR_FPCAST);
 		break;
 	default:
 		throw GenericError("Arm64: translateFCvtf(): Unsupported instruction id");
@@ -2872,7 +2872,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMov(cs_insn* i, cs_arm64* ai
 	op1 = loadOp(ai->operands[1], irb);
 	if (ai->operands[1].type == ARM64_OP_FP)
 	{
-		op1 = generateTypeConversion(irb, op1, getRegisterType(ai->operands[0].reg), eOpConv::FP_CAST);
+		op1 = generateTypeConversion(irb, op1, getRegisterType(ai->operands[0].reg), eOpConv::FPCAST_OR_BITCAST);
 	}
 	else
 	{
@@ -2902,7 +2902,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMovi(cs_insn* i, cs_arm64* ai
 	}
 
 	op1 = loadOp(ai->operands[1], irb);
-	storeOp(ai->operands[0], op1, irb);
+	storeOp(ai->operands[0], op1, irb, eOpConv::FPCAST_OR_BITCAST);
 }
 
 /**
