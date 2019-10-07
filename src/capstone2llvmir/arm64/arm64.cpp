@@ -827,7 +827,14 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm64_impl::storeRegister(
 		return nullptr;
 	}
 
-	val = generateTypeConversion(irb, val, llvmReg->getValueType(), ct);
+	if (llvmReg->getValueType()->isFloatingPointTy())
+	{
+		val = generateTypeConversion(irb, val, llvmReg->getValueType(), eOpConv::FPCAST_OR_BITCAST);
+	}
+	else
+	{
+		val = generateTypeConversion(irb, val, llvmReg->getValueType(), ct);
+	}
 
 	return irb.CreateStore(val, llvmReg);
 }
