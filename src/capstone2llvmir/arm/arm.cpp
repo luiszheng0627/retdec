@@ -521,7 +521,14 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeRegister(
 	{
 		throw GenericError("storeRegister() unhandled reg.");
 	}
-	val = generateTypeConversion(irb, val, llvmReg->getValueType(), ct);
+	if (llvmReg->getValueType()->isFloatingPointTy())
+	{
+		val = generateTypeConversion(irb, val, llvmReg->getValueType(), eOpConv::FPCAST_OR_BITCAST);
+	}
+	else
+	{
+		val = generateTypeConversion(irb, val, llvmReg->getValueType(), ct);
+	}
 
 	return irb.CreateStore(val, llvmReg);
 }
